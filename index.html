@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Dino Vocab — Learn Spanish!</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: #e0ddd4;
+  font-family: 'Courier New', Courier, monospace;
+  overflow: hidden;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+canvas {
+  background: #f7f7f7;
+  border-radius: 12px;
+  box-shadow: 0 6px 30px rgba(0,0,0,0.18);
+  max-width: 96vw;
+  cursor: pointer;
+  image-rendering: auto;
+}
+#info {
+  margin-top: 14px;
+  color: #999;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+</style>
+</head>
+<body>
+<canvas id="c" width="800" height="300"></canvas>
+<p id="info">Press SPACE or tap to play</p>
+<script>
+// ═══════════════════════════════════════════════
+//  DINO VOCAB — Chrome Dino × Vocabulary Game
+// ═══════════════════════════════════════════════
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const info = document.getElementById('info');
+const W = 800, H = 300;
+
+// ── CONFIG ──────────────────────────────────────
+const GROUND_Y  = 252;
+const GRAVITY   = 0.2;
+const JUMP_VEL  = -10;
+const BASE_SPEED = 2;
+const SPEED_INC  = 0.1;
+const MAX_SPEED  = 4;
+const LEARN_GAP  = 1450;
+const QUIZ_LEAD  = 1200;
+const QUIZ_GAP   = 1050;
+const CELEBRATE_DUR = 100;
+
+// ── VOCABULARY ──────────────────────────────────
+const VOCAB = [
+  { word: 'hola',      meaning: 'hello' },
+  { word: 'adiós',     meaning: 'goodbye' },
+  { word: 'gracias',   meaning: 'thank you' },
+  { word: 'por favor', meaning: 'please' },
+  { word: 'gato',      meaning: 'cat' },
+  { word: 'perro',     meaning: 'dog' },
+  { word: 'casa',      meaning: 'house' },
+  { word: 'agua',      meaning: 'water' },
+  { word: 'sol',       meaning: 'sun' },
+  { word: 'luna',      meaning: 'moon' },
+  { word: 'libro',     meaning: 'book' },
+  { word: 'rojo',      meaning: 'red' },
+  { word: 'verde',     meaning: 'green' },
+  { word: 'azul',      meaning: 'blue' },
+  { word: 'grande',    meaning: 'big' },
+  { word: 'pequeño',   meaning: 'small' },
+  { word: 'bueno',     meaning: 'good' },
+  { word: 'malo',      meaning: 'bad' },
+  { word: 'comer',     meaning: 'to eat' },
+  { word: 'beber',     meaning: 'to drink' },
+  { word: 'dormir',    meaning: 'to sleep' },
+  { word: 'hablar',    meaning: 'to speak' },
+  { word: 'amigo',     meaning: 'friend' },
+  { word: 'comida',    meaning: 'food' },
+  { word: 'tiempo',    meaning: 'time' },
+  { word: 'ciudad',    meaning: 'city' },
+  { word: 'trabajo',   meaning: 'work' },
+  { word: 'noche',     meaning: 'night' },
+  { word: 'día',       meaning: 'day' },
+  { word: 'feliz',     meaning: 'happy' },
+  { word: 'triste',    meaning: 'sad' },
+  { word: 'bonito',    meaning: 'pretty' },
+  { word: 'fuerte',    meaning: 'strong' },
+  { word: 'nuevo',     meaning: 'new' },
+  { word: 'viejo',     meaning: 'old' },
+  { word: 'estrella',  meaning: 'star' },
+  { word: 'corazón',   meaning: 'heart' },
+  { word: 'montaña',   meaning: 'mountain' },
+  { word: 'ventana',   meaning: 'window' },
+  { word: 'camino',    meaning: 'path' },
+];
+
+// ── STATE ───────────────────────────────────────
+let state = 'menu';   // menu | playing | gameover
+let score = 0, round = 0, speed = BASE_SPEED;
+let wordsLearned = 0;
+let frame = 0, roundStartFrame = 0;
+
+const dino = { x: 80, y: GROUND_Y, w: 44, h: 47, vy: 0, grounded: true, runFrame: 0 };
+let hurdles = [];
+let roundData = {};
+let usedWords = new Set();
+
+// Sky text
+let sky = { main: '', sub: '', alpha: 0, targetAlpha: 0, color: '#1a5276' };
+
+// Floating texts (word popups)
+let floats = [];
+
+// Screen flash
+let flash = { color: '#fff', alpha: 0 };
+
+// Ground dashes
+const groundDashes = [];
+for (let i = 0; i < 50; i++) groundDashes.push({ x: i * 20 + Math.random() * 8, w: 6 + Math.random() * 14 });
+
+// Clouds
+const clouds = [];
+for (let i = 0; i < 6; i++) clouds.push({ x: Math.random() * W, y: 25 + Math.random() * 55, w: 35 + Math.random() * 55 });
+
+// ── UTILITIES ───────────────────────────────────
+function shuffle(a) {
+  const b = [...a];
+  for (let i = b.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [b[i], b[j]] = [b[j], b[i]]; }
+  return b;
+}
+
+function setSky(main, sub, alpha, color) {
+  sky.main = main; sky.sub = sub; sky.targetAlpha = alpha; sky.color = color || '#1a5276';
+}
+
+function doFlash(color) { flash.color = color; flash.alpha = 0.35; }
+
+function addFloat(text, x, y, color) {
+  floats.push({ text, x, y, alpha: 1.2, color: color || '#1a5276' });
+}
+
+// ── ROUND SETUP ─────────────────────────────────
+function pickWords() {
+  let pool = VOCAB.filter(v => !usedWords.has(v.word));
+  if (pool.length < 2) { usedWords.clear(); pool = [...VOCAB]; }
+  const picked = shuffle(pool).slice(0, 2);
+  picked.forEach(w => usedWords.add(w.word));
+  return picked;
+}
+
+function setupRound() {
+  round++;
+  speed = Math.min(BASE_SPEED + (round - 1) * SPEED_INC, MAX_SPEED);
+  roundStartFrame = frame;
+
+  const [w1, w2] = pickWords();
+  const quizWord = Math.random() < 0.5 ? w1 : w2;
+  const otherWord = quizWord === w1 ? w2 : w1;
+  const correct = quizWord.meaning;
+
+  // Distractors: always include the other word's meaning + one random
+  const otherMeaning = otherWord.meaning;
+  const pool = VOCAB.map(v => v.meaning).filter(m => m !== correct && m !== otherMeaning);
+  const third = shuffle(pool)[0];
+  const options = shuffle([correct, otherMeaning, third]);
+
+  const sx = W + 220;
+  hurdles = [
+    { x: sx, w: 22, h: 42, type: 'learn', word: w1, passed: false, hit: false },
+    { x: sx + LEARN_GAP, w: 22, h: 42, type: 'learn', word: w2, passed: false, hit: false },
+    { x: sx + LEARN_GAP * 2 + QUIZ_LEAD, w: 22, h: 42, type: 'quiz', label: options[0], correct: options[0] === correct, passed: false, hit: false },
+    { x: sx + LEARN_GAP * 2 + QUIZ_LEAD + QUIZ_GAP, w: 22, h: 42, type: 'quiz', label: options[1], correct: options[1] === correct, passed: false, hit: false },
+    { x: sx + LEARN_GAP * 2 + QUIZ_LEAD + QUIZ_GAP * 2, w: 22, h: 42, type: 'quiz', label: options[2], correct: options[2] === correct, passed: false, hit: false },
+  ];
+
+  roundData = {
+    word1: w1, word2: w2,
+    quizWord, correctAnswer: correct, options,
+    shownWords: [],
+    question: `What does "${quizWord.word}" mean?`,
+    phase: 'learn',          // learn | quiz | celebrate
+    celebrateTimer: 0,
+    gameOverMsg: '',
+  };
+
+  setSky(`— Round ${round} —`, round === 1 ? 'Jump over hurdles to learn words!' : '', 1, '#999');
+}
+
+// ── INPUT ───────────────────────────────────────
+function onInput() {
+  if (state === 'menu') { startGame(); return; }
+  if (state === 'gameover') { startGame(); return; }
+  if (state === 'playing' && dino.grounded) {
+    dino.vy = JUMP_VEL;
+    dino.grounded = false;
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); onInput(); }
+});
+canvas.addEventListener('click', e => { e.preventDefault(); onInput(); });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); onInput(); });
+
+// ── GAME CONTROL ────────────────────────────────
+function startGame() {
+  state = 'playing';
+  score = 0; round = 0; wordsLearned = 0; frame = 0;
+  speed = BASE_SPEED;
+  dino.y = GROUND_Y; dino.vy = 0; dino.grounded = true; dino.runFrame = 0;
+  hurdles = []; floats = [];
+  usedWords.clear();
+  flash.alpha = 0;
+  setupRound();
+  info.textContent = 'SPACE / tap to jump';
+}
+
+function gameOver(msg) {
+  state = 'gameover';
+  roundData.gameOverMsg = msg || 'Game Over!';
+  info.textContent = 'Press SPACE or tap to retry';
+}
+
+// ── COLLISION ───────────────────────────────────
+function collides(d, h) {
+  // Slightly forgiving hitbox
+  const dl = d.x + 10, dr = d.x + d.w - 6;
+  const dt = d.y - d.h + 8, db = d.y;
+  const hl = h.x + 3, hr = h.x + h.w - 3;
+  const ht = GROUND_Y - h.h + 3, hb = GROUND_Y;
+  return dr > hl && dl < hr && db > ht && dt < hb;
+}
+
+// ── UPDATE ──────────────────────────────────────
+function update() {
+  if (state !== 'playing') return;
+  frame++;
+  dino.runFrame++;
+
+  // — Physics —
+  if (!dino.grounded) {
+    dino.vy += GRAVITY;
+    dino.y += dino.vy;
+    if (dino.y >= GROUND_Y) { dino.y = GROUND_Y; dino.vy = 0; dino.grounded = true; }
+  }
+
+  // — Move objects —
+  for (const h of hurdles) h.x -= speed;
+  for (const d of groundDashes) { d.x -= speed; if (d.x + d.w < 0) { d.x = W + Math.random() * 20; d.w = 6 + Math.random() * 14; } }
+  for (const c of clouds) { c.x -= speed * 0.15; if (c.x + c.w < -20) { c.x = W + 40 + Math.random() * 80; c.y = 25 + Math.random() * 55; } }
+
+  // — Floating texts —
+  floats = floats.filter(f => { f.y -= 0.8; f.alpha -= 0.012; return f.alpha > 0; });
+
+  // — Flash fade —
+  if (flash.alpha > 0) flash.alpha -= 0.012;
+
+  // — Sky interpolation —
+  sky.alpha += (sky.targetAlpha - sky.alpha) * 0.07;
+
+  // — Celebrate phase —
+  if (roundData.phase === 'celebrate') {
+    roundData.celebrateTimer--;
+    if (roundData.celebrateTimer <= 0) setupRound();
+    score += speed * 0.01;
+    return;
+  }
+
+  // — Hurdle interactions —
+  for (const h of hurdles) {
+    if (h.passed || h.hit) continue;
+
+    // Collision check
+    if (collides(dino, h)) {
+      h.hit = true;
+      if (h.type === 'learn') {
+        doFlash('#c0392b');
+        gameOver('Oops! Jump over green hurdles to learn words!');
+        return;
+      } else {
+        if (h.correct) {
+          // CORRECT
+          score += 100;
+          wordsLearned += 2;
+          roundData.phase = 'celebrate';
+          roundData.celebrateTimer = CELEBRATE_DUR;
+          hurdles = hurdles.filter(hh => hh.hit); // remove remaining
+          setSky('Correct!', `${roundData.quizWord.word} = ${roundData.correctAnswer}`, 1, '#27ae60');
+          doFlash('#27ae60');
+          addFloat('+100', dino.x + 30, dino.y - 70, '#27ae60');
+          return;
+        } else {
+          doFlash('#c0392b');
+          gameOver(`Wrong! "${roundData.quizWord.word}" = ${roundData.correctAnswer}`);
+          return;
+        }
+      }
+    }
+
+    // Passed check (hurdle scrolled past dino)
+    if (h.x + h.w < dino.x - 5) {
+      h.passed = true;
+      if (h.type === 'learn') {
+        roundData.shownWords.push(h.word);
+        addFloat(`${h.word.word} = ${h.word.meaning}`, W / 2, 100, '#1a5276');
+      }
+    }
+  }
+
+  // Check if all quiz hurdles skipped
+  const quizH = hurdles.filter(h => h.type === 'quiz');
+  if (quizH.length > 0 && quizH.every(h => h.passed)) {
+    doFlash('#c0392b');
+    gameOver(`You skipped all answers! "${roundData.quizWord.word}" = ${roundData.correctAnswer}`);
+    return;
+  }
+
+  // — Update sky display —
+  updateSky();
+
+  // — Score —
+  score += speed * 0.008;
+}
+
+function updateSky() {
+  const learnPassed = roundData.shownWords.length;
+  const firstQuiz = hurdles.find(h => h.type === 'quiz' && !h.passed && !h.hit);
+  const quizVisible = firstQuiz && firstQuiz.x < W + 30;
+
+  if (quizVisible || roundData.phase === 'quiz') {
+    setSky(roundData.question, 'Crash into the correct answer!', 1, '#c0392b');
+    roundData.phase = 'quiz';
+  } else if (learnPassed >= 2) {
+    const a = roundData.word1, b = roundData.word2;
+    setSky(`${a.word} = ${a.meaning}    ·    ${b.word} = ${b.meaning}`, 'Quiz coming up — remember these!', 1, '#1a5276');
+  } else if (learnPassed === 1) {
+    const w = roundData.shownWords[0];
+    setSky(`${w.word}  =  ${w.meaning}`, '', 1, '#1a5276');
+  } else if (frame - roundStartFrame < 100) {
+    // Round intro still showing (set in setupRound)
+  } else {
+    setSky('', '', 0, '#999');
+  }
+}
+
+// ── DRAWING ─────────────────────────────────────
+
+function drawDino() {
+  const bx = dino.x, by = dino.y - dino.h;
+  ctx.fillStyle = '#535353';
+
+  // Head
+  ctx.fillRect(bx + 20, by, 24, 12);
+  ctx.fillRect(bx + 14, by + 6, 30, 14);
+  ctx.fillRect(bx + 24, by + 16, 20, 6);
+  // Eye
+  ctx.fillStyle = '#f7f7f7';
+  ctx.fillRect(bx + 36, by + 4, 4, 4);
+  ctx.fillStyle = '#535353';
+  // Body
+  ctx.fillRect(bx + 6, by + 18, 28, 20);
+  // Tail
+  ctx.fillRect(bx, by + 22, 10, 6);
+  ctx.fillRect(bx - 5, by + 26, 9, 4);
+  // Arm
+  ctx.fillRect(bx + 30, by + 28, 7, 3);
+  ctx.fillRect(bx + 35, by + 30, 3, 5);
+  // Legs
+  if (!dino.grounded) {
+    ctx.fillRect(bx + 12, by + 36, 8, 7);
+    ctx.fillRect(bx + 24, by + 38, 8, 5);
+  } else {
+    const f = Math.floor(dino.runFrame / 5) % 2;
+    ctx.fillRect(bx + 12, by + 38, 8, f ? 5 : 9);
+    ctx.fillRect(bx + 24, by + 38, 8, f ? 9 : 5);
+  }
+}
+
+function drawCactus(h) {
+  const x = h.x, top = GROUND_Y - h.h;
+  ctx.fillStyle = '#3a7a2a';
+  ctx.fillRect(x + 7, top, 8, h.h);
+  ctx.fillRect(x, top + 10, 7, 5);
+  ctx.fillRect(x, top + 5, 4, 12);
+  ctx.fillRect(x + 15, top + 16, 7, 5);
+  ctx.fillRect(x + 18, top + 10, 4, 14);
+  // Highlight
+  ctx.fillStyle = '#4a9a38';
+  ctx.fillRect(x + 9, top + 2, 3, h.h - 4);
+}
+
+function drawQuizCactus(h) {
+  const x = h.x, top = GROUND_Y - h.h;
+  // Same cactus shape but red-brown color
+  ctx.fillStyle = h.hit ? (h.correct ? '#27ae60' : '#c0392b') : '#8B4513';
+  ctx.fillRect(x + 7, top, 8, h.h);
+  ctx.fillRect(x, top + 10, 7, 5);
+  ctx.fillRect(x, top + 5, 4, 12);
+  ctx.fillRect(x + 15, top + 16, 7, 5);
+  ctx.fillRect(x + 18, top + 10, 4, 14);
+  ctx.fillStyle = h.hit ? (h.correct ? '#2ecc71' : '#e74c3c') : '#A0522D';
+  ctx.fillRect(x + 9, top + 2, 3, h.h - 4);
+
+  // Floating label above
+  if (!h.passed && !h.hit && h.x < W) {
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 18px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(h.label, x + h.w / 2, top - 16);
+    ctx.textAlign = 'left';
+  }
+}
+
+function drawGround() {
+  ctx.fillStyle = '#535353';
+  ctx.fillRect(0, GROUND_Y, W, 2);
+  ctx.fillStyle = '#bbb';
+  for (const d of groundDashes) ctx.fillRect(d.x, GROUND_Y + 6 + (d.x * 7 % 3), d.w, 1);
+}
+
+function drawClouds() {
+  ctx.fillStyle = '#e8e8e8';
+  for (const c of clouds) {
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, c.w * 0.45, 10, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(c.x - c.w * 0.22, c.y + 5, c.w * 0.3, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(c.x + c.w * 0.25, c.y + 3, c.w * 0.28, 7, 0, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function drawSkyText() {
+  if (sky.alpha < 0.02) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(sky.alpha, 1);
+  ctx.fillStyle = sky.color;
+  ctx.textAlign = 'center';
+
+  ctx.font = 'bold 20px "Courier New", monospace';
+  ctx.fillText(sky.main, W / 2, 38);
+
+  if (sky.sub) {
+    ctx.font = '14px "Courier New", monospace';
+    ctx.fillStyle = sky.color === '#c0392b' ? '#e74c3c' : '#5a5a5a';
+    ctx.fillText(sky.sub, W / 2, 60);
+  }
+
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+function drawFloats() {
+  for (const f of floats) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(f.alpha, 1);
+    ctx.fillStyle = f.color;
+    ctx.font = 'bold 17px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(f.text, f.x, f.y);
+    ctx.restore();
+  }
+  ctx.textAlign = 'left';
+}
+
+function drawFlash() {
+  if (flash.alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = flash.alpha;
+  ctx.fillStyle = flash.color;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.fillStyle = '#999';
+  ctx.font = '13px "Courier New", monospace';
+  ctx.fillText(`Score: ${Math.floor(score)}`, 12, 18);
+  ctx.textAlign = 'right';
+  ctx.fillText(`Round ${round}`, W - 12, 18);
+  ctx.fillText(`Words: ${wordsLearned}`, W - 12, 34);
+  ctx.textAlign = 'left';
+}
+
+function drawPhaseIndicator() {
+  if (roundData.phase === 'quiz') {
+    ctx.save();
+    ctx.fillStyle = 'rgba(192,57,43,0.12)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#c0392b';
+    ctx.font = 'bold 11px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('— QUIZ MODE — Crash into the right answer! —', W / 2, H - 16);
+    ctx.textAlign = 'left';
+    ctx.restore();
+  }
+}
+
+function drawMenu() {
+  ctx.fillStyle = '#f7f7f7';
+  ctx.fillRect(0, 0, W, H);
+  drawClouds();
+  drawGround();
+
+  // Static dino
+  dino.y = GROUND_Y; dino.grounded = true; dino.runFrame = 0;
+  drawDino();
+
+  // Static cactus
+  ctx.save();
+  drawCactus({ x: 300, w: 22, h: 42 });
+  drawQuizCactus({ x: 500, w: 22, h: 42, label: 'hello', correct: false, passed: false, hit: false });
+  ctx.restore();
+
+  ctx.textAlign = 'center';
+
+  ctx.fillStyle = '#333';
+  ctx.font = 'bold 32px "Courier New", monospace';
+  ctx.fillText('DINO VOCAB', W / 2, 60);
+
+  ctx.font = '16px "Courier New", monospace';
+  ctx.fillStyle = '#777';
+  ctx.fillText('Learn Spanish while you run!', W / 2, 88);
+
+  ctx.font = '13px "Courier New", monospace';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('1. Jump over green hurdles to learn words', W / 2, 125);
+  ctx.fillText('2. A quiz appears — 3 answer hurdles approach', W / 2, 145);
+  ctx.fillText('3. CRASH into the correct answer to survive', W / 2, 165);
+  ctx.fillText('4. Wrong crash or skipping all = Game Over', W / 2, 185);
+
+  ctx.font = 'bold 15px "Courier New", monospace';
+  ctx.fillStyle = '#333';
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 400);
+  ctx.globalAlpha = 0.4 + 0.6 * pulse;
+  ctx.fillText('Press SPACE or tap to start', W / 2, 225);
+  ctx.globalAlpha = 1;
+
+  ctx.textAlign = 'left';
+}
+
+function drawGameOver() {
+  // Dim
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Box
+  const bw = 440, bh = 160, bx = (W - bw) / 2, by = 50;
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#555';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 10);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+
+  ctx.fillStyle = '#c0392b';
+  ctx.font = 'bold 26px "Courier New", monospace';
+  ctx.fillText('GAME OVER', W / 2, by + 38);
+
+  ctx.fillStyle = '#555';
+  ctx.font = '14px "Courier New", monospace';
+  ctx.fillText(roundData.gameOverMsg || '', W / 2, by + 68);
+
+  ctx.fillStyle = '#333';
+  ctx.font = 'bold 14px "Courier New", monospace';
+  ctx.fillText(`Score: ${Math.floor(score)}    ·    Words Learned: ${wordsLearned}    ·    Rounds: ${round - 1}`, W / 2, by + 98);
+
+  ctx.fillStyle = '#888';
+  ctx.font = '13px "Courier New", monospace';
+  ctx.fillText('Press SPACE or tap to retry', W / 2, by + 132);
+
+  ctx.textAlign = 'left';
+}
+
+// ── RENDER ──────────────────────────────────────
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#f7f7f7';
+  ctx.fillRect(0, 0, W, H);
+
+  if (state === 'menu') { drawMenu(); return; }
+
+  drawClouds();
+  drawPhaseIndicator();
+  drawSkyText();
+  drawGround();
+
+  // Hurdles
+  for (const h of hurdles) {
+    if (h.x > W + 60 || h.x + h.w < -60) continue;
+    if (h.type === 'learn') drawCactus(h);
+    else drawQuizCactus(h);
+  }
+
+  drawDino();
+  drawFloats();
+  drawHUD();
+  drawFlash();
+
+  if (state === 'gameover') drawGameOver();
+}
+
+// ── MAIN LOOP ───────────────────────────────────
+function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
