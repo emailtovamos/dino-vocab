@@ -4,54 +4,56 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Dino Vocab — Learn Spanish!</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #1a1a2e;
+}
 body {
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  min-height: 100vh;
-  background: #e0ddd4;
-  font-family: 'Courier New', Courier, monospace;
-  overflow: hidden;
+  font-family: 'Fredoka', sans-serif;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
 }
 canvas {
-  background: #f7f7f7;
-  border-radius: 12px;
-  box-shadow: 0 6px 30px rgba(0,0,0,0.18);
-  max-width: 96vw;
+  display: block;
+  width: 100vw;
+  height: 100vh;
   cursor: pointer;
-  image-rendering: auto;
-}
-#info {
-  margin-top: 14px;
-  color: #999;
-  font-size: 13px;
-  letter-spacing: 0.5px;
 }
 </style>
 </head>
 <body>
-<canvas id="c" width="800" height="300"></canvas>
-<p id="info">Press SPACE or tap to play</p>
+<canvas id="c"></canvas>
 <script>
 // ═══════════════════════════════════════════════
-//  DINO VOCAB — Chrome Dino × Vocabulary Game
+//  DINO VOCAB — Learn Spanish while you run!
 // ═══════════════════════════════════════════════
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const info = document.getElementById('info');
-const W = 800, H = 300;
+
+// Responsive canvas — HiDPI aware for crisp text
+const W = 1200, H = 520;
+const dpr = window.devicePixelRatio || 1;
+canvas.width = W * dpr;
+canvas.height = H * dpr;
+canvas.style.width = '100vw';
+canvas.style.height = '100vh';
+ctx.scale(dpr, dpr);
 
 // ── CONFIG ──────────────────────────────────────
-const GROUND_Y  = 252;
-const GRAVITY   = 0.2;
-const JUMP_VEL  = -10;
+const GROUND_Y   = 430;
+const GRAVITY    = 0.12;
+const JUMP_VEL   = -9;
 const BASE_SPEED = 2;
 const SPEED_INC  = 0.1;
 const MAX_SPEED  = 4;
@@ -59,6 +61,9 @@ const LEARN_GAP  = 1450;
 const QUIZ_LEAD  = 1200;
 const QUIZ_GAP   = 1050;
 const CELEBRATE_DUR = 100;
+
+// Scale factor for sprites (original was built for 800x300)
+const S = 1.6;
 
 // ── VOCABULARY ──────────────────────────────────
 const VOCAB = [
@@ -105,12 +110,12 @@ const VOCAB = [
 ];
 
 // ── STATE ───────────────────────────────────────
-let state = 'menu';   // menu | playing | gameover
+let state = 'menu';
 let score = 0, round = 0, speed = BASE_SPEED;
 let wordsLearned = 0;
 let frame = 0, roundStartFrame = 0;
 
-const dino = { x: 80, y: GROUND_Y, w: 44, h: 47, vy: 0, grounded: true, runFrame: 0 };
+const dino = { x: 120, y: GROUND_Y, w: Math.round(44*S), h: Math.round(47*S), vy: 0, grounded: true, runFrame: 0 };
 let hurdles = [];
 let roundData = {};
 let usedWords = new Set();
@@ -118,19 +123,26 @@ let usedWords = new Set();
 // Sky text
 let sky = { main: '', sub: '', alpha: 0, targetAlpha: 0, color: '#1a5276' };
 
-// Floating texts (word popups)
+// Floating texts
 let floats = [];
 
 // Screen flash
 let flash = { color: '#fff', alpha: 0 };
 
+// Dust particles
+let dust = [];
+
 // Ground dashes
 const groundDashes = [];
-for (let i = 0; i < 50; i++) groundDashes.push({ x: i * 20 + Math.random() * 8, w: 6 + Math.random() * 14 });
+for (let i = 0; i < 60; i++) groundDashes.push({ x: i * 25 + Math.random() * 10, w: 10 + Math.random() * 20 });
 
 // Clouds
 const clouds = [];
-for (let i = 0; i < 6; i++) clouds.push({ x: Math.random() * W, y: 25 + Math.random() * 55, w: 35 + Math.random() * 55 });
+for (let i = 0; i < 8; i++) clouds.push({ x: Math.random() * W, y: 40 + Math.random() * 80, w: 60 + Math.random() * 80 });
+
+// Background hills
+const hills = [];
+for (let i = 0; i < 12; i++) hills.push({ x: i * 130 + Math.random() * 40, h: 40 + Math.random() * 60, w: 100 + Math.random() * 80 });
 
 // ── UTILITIES ───────────────────────────────────
 function shuffle(a) {
@@ -143,10 +155,23 @@ function setSky(main, sub, alpha, color) {
   sky.main = main; sky.sub = sub; sky.targetAlpha = alpha; sky.color = color || '#1a5276';
 }
 
-function doFlash(color) { flash.color = color; flash.alpha = 0.35; }
+function doFlash(color) { flash.color = color; flash.alpha = 0.3; }
 
 function addFloat(text, x, y, color) {
   floats.push({ text, x, y, alpha: 1.2, color: color || '#1a5276' });
+}
+
+function addDust() {
+  for (let i = 0; i < 5; i++) {
+    dust.push({
+      x: dino.x + 10 + Math.random() * 20,
+      y: GROUND_Y - 2,
+      vx: -1 - Math.random() * 2,
+      vy: -Math.random() * 2,
+      life: 20 + Math.random() * 15,
+      size: 2 + Math.random() * 3,
+    });
+  }
 }
 
 // ── ROUND SETUP ─────────────────────────────────
@@ -158,6 +183,9 @@ function pickWords() {
   return picked;
 }
 
+const HW = Math.round(20 * S);   // hurdle width
+const HH = Math.round(28 * S);   // hurdle height
+
 function setupRound() {
   round++;
   speed = Math.min(BASE_SPEED + (round - 1) * SPEED_INC, MAX_SPEED);
@@ -168,19 +196,18 @@ function setupRound() {
   const otherWord = quizWord === w1 ? w2 : w1;
   const correct = quizWord.meaning;
 
-  // Distractors: always include the other word's meaning + one random
   const otherMeaning = otherWord.meaning;
   const pool = VOCAB.map(v => v.meaning).filter(m => m !== correct && m !== otherMeaning);
   const third = shuffle(pool)[0];
   const options = shuffle([correct, otherMeaning, third]);
 
-  const sx = W + 220;
+  const sx = W + 280;
   hurdles = [
-    { x: sx, w: 22, h: 42, type: 'learn', word: w1, passed: false, hit: false },
-    { x: sx + LEARN_GAP, w: 22, h: 42, type: 'learn', word: w2, passed: false, hit: false },
-    { x: sx + LEARN_GAP * 2 + QUIZ_LEAD, w: 22, h: 42, type: 'quiz', label: options[0], correct: options[0] === correct, passed: false, hit: false },
-    { x: sx + LEARN_GAP * 2 + QUIZ_LEAD + QUIZ_GAP, w: 22, h: 42, type: 'quiz', label: options[1], correct: options[1] === correct, passed: false, hit: false },
-    { x: sx + LEARN_GAP * 2 + QUIZ_LEAD + QUIZ_GAP * 2, w: 22, h: 42, type: 'quiz', label: options[2], correct: options[2] === correct, passed: false, hit: false },
+    { x: sx, w: HW, h: HH, type: 'learn', word: w1, passed: false, hit: false },
+    { x: sx + LEARN_GAP, w: HW, h: HH, type: 'learn', word: w2, passed: false, hit: false },
+    { x: sx + LEARN_GAP * 2 + QUIZ_LEAD, w: HW, h: HH, type: 'quiz', label: options[0], correct: options[0] === correct, passed: false, hit: false },
+    { x: sx + LEARN_GAP * 2 + QUIZ_LEAD + QUIZ_GAP, w: HW, h: HH, type: 'quiz', label: options[1], correct: options[1] === correct, passed: false, hit: false },
+    { x: sx + LEARN_GAP * 2 + QUIZ_LEAD + QUIZ_GAP * 2, w: HW, h: HH, type: 'quiz', label: options[2], correct: options[2] === correct, passed: false, hit: false },
   ];
 
   roundData = {
@@ -188,12 +215,12 @@ function setupRound() {
     quizWord, correctAnswer: correct, options,
     shownWords: [],
     question: `What does "${quizWord.word}" mean?`,
-    phase: 'learn',          // learn | quiz | celebrate
+    phase: 'learn',
     celebrateTimer: 0,
     gameOverMsg: '',
   };
 
-  setSky(`— Round ${round} —`, round === 1 ? 'Jump over hurdles to learn words!' : '', 1, '#999');
+  setSky(`Round ${round}`, round === 1 ? 'Jump over hurdles to learn words!' : '', 1, '#546e7a');
 }
 
 // ── INPUT ───────────────────────────────────────
@@ -203,6 +230,7 @@ function onInput() {
   if (state === 'playing' && dino.grounded) {
     dino.vy = JUMP_VEL;
     dino.grounded = false;
+    addDust();
   }
 }
 
@@ -218,26 +246,23 @@ function startGame() {
   score = 0; round = 0; wordsLearned = 0; frame = 0;
   speed = BASE_SPEED;
   dino.y = GROUND_Y; dino.vy = 0; dino.grounded = true; dino.runFrame = 0;
-  hurdles = []; floats = [];
+  hurdles = []; floats = []; dust = [];
   usedWords.clear();
   flash.alpha = 0;
   setupRound();
-  info.textContent = 'SPACE / tap to jump';
 }
 
 function gameOver(msg) {
   state = 'gameover';
   roundData.gameOverMsg = msg || 'Game Over!';
-  info.textContent = 'Press SPACE or tap to retry';
 }
 
 // ── COLLISION ───────────────────────────────────
 function collides(d, h) {
-  // Slightly forgiving hitbox
-  const dl = d.x + 10, dr = d.x + d.w - 6;
-  const dt = d.y - d.h + 8, db = d.y;
-  const hl = h.x + 3, hr = h.x + h.w - 3;
-  const ht = GROUND_Y - h.h + 3, hb = GROUND_Y;
+  const dl = d.x + 14, dr = d.x + d.w - 10;
+  const dt = d.y - d.h + 12, db = d.y;
+  const hl = h.x + 4, hr = h.x + h.w - 4;
+  const ht = GROUND_Y - h.h + 4, hb = GROUND_Y;
   return dr > hl && dl < hr && db > ht && dt < hb;
 }
 
@@ -247,28 +272,37 @@ function update() {
   frame++;
   dino.runFrame++;
 
-  // — Physics —
+  // Physics
   if (!dino.grounded) {
     dino.vy += GRAVITY;
     dino.y += dino.vy;
-    if (dino.y >= GROUND_Y) { dino.y = GROUND_Y; dino.vy = 0; dino.grounded = true; }
+    if (dino.y >= GROUND_Y) {
+      dino.y = GROUND_Y;
+      dino.vy = 0;
+      dino.grounded = true;
+      addDust();
+    }
   }
 
-  // — Move objects —
+  // Move objects
   for (const h of hurdles) h.x -= speed;
-  for (const d of groundDashes) { d.x -= speed; if (d.x + d.w < 0) { d.x = W + Math.random() * 20; d.w = 6 + Math.random() * 14; } }
-  for (const c of clouds) { c.x -= speed * 0.15; if (c.x + c.w < -20) { c.x = W + 40 + Math.random() * 80; c.y = 25 + Math.random() * 55; } }
+  for (const d of groundDashes) { d.x -= speed; if (d.x + d.w < 0) { d.x = W + Math.random() * 30; d.w = 10 + Math.random() * 20; } }
+  for (const c of clouds) { c.x -= speed * 0.12; if (c.x + c.w < -30) { c.x = W + 60 + Math.random() * 100; c.y = 40 + Math.random() * 80; } }
+  for (const h of hills) { h.x -= speed * 0.3; if (h.x + h.w < -20) { h.x = W + 40 + Math.random() * 60; h.h = 40 + Math.random() * 60; h.w = 100 + Math.random() * 80; } }
 
-  // — Floating texts —
+  // Dust
+  dust = dust.filter(d => { d.x += d.vx; d.y += d.vy; d.vy += 0.1; d.life--; return d.life > 0; });
+
+  // Floating texts
   floats = floats.filter(f => { f.y -= 0.8; f.alpha -= 0.012; return f.alpha > 0; });
 
-  // — Flash fade —
-  if (flash.alpha > 0) flash.alpha -= 0.012;
+  // Flash fade
+  if (flash.alpha > 0) flash.alpha -= 0.01;
 
-  // — Sky interpolation —
+  // Sky interpolation
   sky.alpha += (sky.targetAlpha - sky.alpha) * 0.07;
 
-  // — Celebrate phase —
+  // Celebrate phase
   if (roundData.phase === 'celebrate') {
     roundData.celebrateTimer--;
     if (roundData.celebrateTimer <= 0) setupRound();
@@ -276,11 +310,9 @@ function update() {
     return;
   }
 
-  // — Hurdle interactions —
+  // Hurdle interactions
   for (const h of hurdles) {
     if (h.passed || h.hit) continue;
-
-    // Collision check
     if (collides(dino, h)) {
       h.hit = true;
       if (h.type === 'learn') {
@@ -289,15 +321,14 @@ function update() {
         return;
       } else {
         if (h.correct) {
-          // CORRECT
           score += 100;
           wordsLearned += 2;
           roundData.phase = 'celebrate';
           roundData.celebrateTimer = CELEBRATE_DUR;
-          hurdles = hurdles.filter(hh => hh.hit); // remove remaining
-          setSky('Correct!', `${roundData.quizWord.word} = ${roundData.correctAnswer}`, 1, '#27ae60');
-          doFlash('#27ae60');
-          addFloat('+100', dino.x + 30, dino.y - 70, '#27ae60');
+          hurdles = hurdles.filter(hh => hh.hit);
+          setSky('Correct!', `${roundData.quizWord.word} = ${roundData.correctAnswer}`, 1, '#2e7d32');
+          doFlash('#4caf50');
+          addFloat('+100', dino.x + 40, dino.y - 90, '#2e7d32');
           return;
         } else {
           doFlash('#c0392b');
@@ -306,18 +337,16 @@ function update() {
         }
       }
     }
-
-    // Passed check (hurdle scrolled past dino)
     if (h.x + h.w < dino.x - 5) {
       h.passed = true;
       if (h.type === 'learn') {
         roundData.shownWords.push(h.word);
-        addFloat(`${h.word.word} = ${h.word.meaning}`, W / 2, 100, '#1a5276');
+        addFloat(`${h.word.word} = ${h.word.meaning}`, W / 2, 160, '#1565c0');
       }
     }
   }
 
-  // Check if all quiz hurdles skipped
+  // All quiz hurdles skipped
   const quizH = hurdles.filter(h => h.type === 'quiz');
   if (quizH.length > 0 && quizH.every(h => h.passed)) {
     doFlash('#c0392b');
@@ -325,10 +354,7 @@ function update() {
     return;
   }
 
-  // — Update sky display —
   updateSky();
-
-  // — Score —
   score += speed * 0.008;
 }
 
@@ -338,102 +364,170 @@ function updateSky() {
   const quizVisible = firstQuiz && firstQuiz.x < W + 30;
 
   if (quizVisible || roundData.phase === 'quiz') {
-    setSky(roundData.question, 'Crash into the correct answer!', 1, '#c0392b');
+    setSky(roundData.question, 'Crash into the correct answer!', 1, '#c62828');
     roundData.phase = 'quiz';
   } else if (learnPassed >= 2) {
     const a = roundData.word1, b = roundData.word2;
-    setSky(`${a.word} = ${a.meaning}    ·    ${b.word} = ${b.meaning}`, 'Quiz coming up — remember these!', 1, '#1a5276');
+    setSky(`${a.word} = ${a.meaning}     ${b.word} = ${b.meaning}`, 'Quiz coming up — remember these!', 1, '#1565c0');
   } else if (learnPassed === 1) {
     const w = roundData.shownWords[0];
-    setSky(`${w.word}  =  ${w.meaning}`, '', 1, '#1a5276');
+    setSky(`${w.word}  =  ${w.meaning}`, '', 1, '#1565c0');
   } else if (frame - roundStartFrame < 100) {
-    // Round intro still showing (set in setupRound)
+    // Round intro still showing
   } else {
-    setSky('', '', 0, '#999');
+    setSky('', '', 0, '#546e7a');
   }
 }
 
 // ── DRAWING ─────────────────────────────────────
 
+function drawBackground() {
+  // Sky gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  if (roundData.phase === 'quiz') {
+    grad.addColorStop(0, '#fff5f5');
+    grad.addColorStop(1, '#fff0ee');
+  } else {
+    grad.addColorStop(0, '#e3f2fd');
+    grad.addColorStop(1, '#fafafa');
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, GROUND_Y);
+
+  // Ground fill
+  ctx.fillStyle = '#f5f0e8';
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+}
+
+function drawHills() {
+  ctx.fillStyle = '#e8e0d4';
+  for (const h of hills) {
+    ctx.beginPath();
+    ctx.moveTo(h.x, GROUND_Y);
+    ctx.quadraticCurveTo(h.x + h.w / 2, GROUND_Y - h.h, h.x + h.w, GROUND_Y);
+    ctx.fill();
+  }
+}
+
+function drawClouds() {
+  for (const c of clouds) {
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, c.w * 0.45, 16, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(c.x - c.w * 0.25, c.y + 6, c.w * 0.32, 13, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(c.x + c.w * 0.28, c.y + 4, c.w * 0.3, 12, 0, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function drawGround() {
+  // Main ground line
+  ctx.fillStyle = '#8d6e63';
+  ctx.fillRect(0, GROUND_Y - 1, W, 3);
+  // Texture dashes
+  ctx.fillStyle = '#c8b8a8';
+  for (const d of groundDashes) ctx.fillRect(d.x, GROUND_Y + 10 + (d.x * 3 % 4), d.w, 2);
+  ctx.fillStyle = '#d8caba';
+  for (const d of groundDashes) if (d.x % 3 === 0) ctx.fillRect(d.x + 8, GROUND_Y + 20 + (d.x * 5 % 6), d.w * 0.6, 1);
+}
+
+function drawDust() {
+  for (const d of dust) {
+    ctx.fillStyle = `rgba(180,160,140,${d.life / 35})`;
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawDino() {
   const bx = dino.x, by = dino.y - dino.h;
-  ctx.fillStyle = '#535353';
+  ctx.fillStyle = '#37474f';
 
   // Head
-  ctx.fillRect(bx + 20, by, 24, 12);
-  ctx.fillRect(bx + 14, by + 6, 30, 14);
-  ctx.fillRect(bx + 24, by + 16, 20, 6);
+  ctx.fillRect(bx + 32*S, by, 24*S, 12*S);
+  ctx.fillRect(bx + 22*S, by + 6*S, 30*S, 14*S);
+  ctx.fillRect(bx + 38*S, by + 16*S, 20*S, 6*S);
   // Eye
-  ctx.fillStyle = '#f7f7f7';
-  ctx.fillRect(bx + 36, by + 4, 4, 4);
-  ctx.fillStyle = '#535353';
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(bx + 57*S, by + 4*S, 5*S, 5*S);
+  ctx.fillStyle = '#37474f';
   // Body
-  ctx.fillRect(bx + 6, by + 18, 28, 20);
+  ctx.fillRect(bx + 10*S, by + 18*S, 28*S, 20*S);
   // Tail
-  ctx.fillRect(bx, by + 22, 10, 6);
-  ctx.fillRect(bx - 5, by + 26, 9, 4);
+  ctx.fillRect(bx, by + 22*S, 14*S, 7*S);
+  ctx.fillRect(bx - 6*S, by + 27*S, 10*S, 5*S);
   // Arm
-  ctx.fillRect(bx + 30, by + 28, 7, 3);
-  ctx.fillRect(bx + 35, by + 30, 3, 5);
+  ctx.fillRect(bx + 48*S, by + 28*S, 8*S, 4*S);
+  ctx.fillRect(bx + 54*S, by + 30*S, 4*S, 6*S);
   // Legs
   if (!dino.grounded) {
-    ctx.fillRect(bx + 12, by + 36, 8, 7);
-    ctx.fillRect(bx + 24, by + 38, 8, 5);
+    ctx.fillRect(bx + 18*S, by + 36*S, 9*S, 8*S);
+    ctx.fillRect(bx + 38*S, by + 38*S, 9*S, 6*S);
   } else {
     const f = Math.floor(dino.runFrame / 5) % 2;
-    ctx.fillRect(bx + 12, by + 38, 8, f ? 5 : 9);
-    ctx.fillRect(bx + 24, by + 38, 8, f ? 9 : 5);
+    ctx.fillRect(bx + 18*S, by + 38*S, 9*S, f ? 6*S : 10*S);
+    ctx.fillRect(bx + 38*S, by + 38*S, 9*S, f ? 10*S : 6*S);
   }
 }
 
 function drawCactus(h) {
   const x = h.x, top = GROUND_Y - h.h;
-  ctx.fillStyle = '#3a7a2a';
-  ctx.fillRect(x + 7, top, 8, h.h);
-  ctx.fillRect(x, top + 10, 7, 5);
-  ctx.fillRect(x, top + 5, 4, 12);
-  ctx.fillRect(x + 15, top + 16, 7, 5);
-  ctx.fillRect(x + 18, top + 10, 4, 14);
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.06)';
+  ctx.beginPath();
+  ctx.ellipse(x + h.w / 2, GROUND_Y + 2, h.w * 0.7, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Main
+  ctx.fillStyle = '#43a047';
+  ctx.fillRect(x + 10*S, top, 12*S, h.h);
+  ctx.fillRect(x, top + 14*S, 10*S, 8*S);
+  ctx.fillRect(x, top + 6*S, 6*S, 16*S);
+  ctx.fillRect(x + 22*S, top + 22*S, 10*S, 8*S);
+  ctx.fillRect(x + 28*S, top + 14*S, 6*S, 18*S);
   // Highlight
-  ctx.fillStyle = '#4a9a38';
-  ctx.fillRect(x + 9, top + 2, 3, h.h - 4);
+  ctx.fillStyle = '#66bb6a';
+  ctx.fillRect(x + 14*S, top + 3, 4*S, h.h - 6);
 }
 
 function drawQuizCactus(h) {
   const x = h.x, top = GROUND_Y - h.h;
-  // Same cactus shape but red-brown color
-  ctx.fillStyle = h.hit ? (h.correct ? '#27ae60' : '#c0392b') : '#8B4513';
-  ctx.fillRect(x + 7, top, 8, h.h);
-  ctx.fillRect(x, top + 10, 7, 5);
-  ctx.fillRect(x, top + 5, 4, 12);
-  ctx.fillRect(x + 15, top + 16, 7, 5);
-  ctx.fillRect(x + 18, top + 10, 4, 14);
-  ctx.fillStyle = h.hit ? (h.correct ? '#2ecc71' : '#e74c3c') : '#A0522D';
-  ctx.fillRect(x + 9, top + 2, 3, h.h - 4);
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.06)';
+  ctx.beginPath();
+  ctx.ellipse(x + h.w / 2, GROUND_Y + 2, h.w * 0.7, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Main
+  const baseColor = h.hit ? (h.correct ? '#2e7d32' : '#c62828') : '#6d4c41';
+  const hiColor   = h.hit ? (h.correct ? '#43a047' : '#e53935') : '#8d6e63';
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(x + 10*S, top, 12*S, h.h);
+  ctx.fillRect(x, top + 14*S, 10*S, 8*S);
+  ctx.fillRect(x, top + 6*S, 6*S, 16*S);
+  ctx.fillRect(x + 22*S, top + 22*S, 10*S, 8*S);
+  ctx.fillRect(x + 28*S, top + 14*S, 6*S, 18*S);
+  ctx.fillStyle = hiColor;
+  ctx.fillRect(x + 14*S, top + 3, 4*S, h.h - 6);
 
-  // Floating label above
+  // Floating label
   if (!h.passed && !h.hit && h.x < W) {
-    ctx.fillStyle = '#333';
-    ctx.font = 'bold 18px "Courier New", monospace';
+    // Background pill
+    ctx.font = 'bold 26px "Fredoka", sans-serif';
+    const tw = ctx.measureText(h.label).width;
+    const px = 18, py = 8;
+    const lx = x + h.w / 2, ly = top - 30;
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.beginPath();
+    ctx.roundRect(lx - tw / 2 - px, ly - 16 - py, tw + px * 2, 32 + py, 12);
+    ctx.fill();
+    ctx.strokeStyle = '#8d6e63';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Text
+    ctx.fillStyle = '#4e342e';
     ctx.textAlign = 'center';
-    ctx.fillText(h.label, x + h.w / 2, top - 16);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(h.label, lx, ly);
     ctx.textAlign = 'left';
-  }
-}
-
-function drawGround() {
-  ctx.fillStyle = '#535353';
-  ctx.fillRect(0, GROUND_Y, W, 2);
-  ctx.fillStyle = '#bbb';
-  for (const d of groundDashes) ctx.fillRect(d.x, GROUND_Y + 6 + (d.x * 7 % 3), d.w, 1);
-}
-
-function drawClouds() {
-  ctx.fillStyle = '#e8e8e8';
-  for (const c of clouds) {
-    ctx.beginPath(); ctx.ellipse(c.x, c.y, c.w * 0.45, 10, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(c.x - c.w * 0.22, c.y + 5, c.w * 0.3, 8, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(c.x + c.w * 0.25, c.y + 3, c.w * 0.28, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.textBaseline = 'alphabetic';
   }
 }
 
@@ -441,16 +535,19 @@ function drawSkyText() {
   if (sky.alpha < 0.02) return;
   ctx.save();
   ctx.globalAlpha = Math.min(sky.alpha, 1);
-  ctx.fillStyle = sky.color;
   ctx.textAlign = 'center';
 
-  ctx.font = 'bold 20px "Courier New", monospace';
-  ctx.fillText(sky.main, W / 2, 38);
+  // Main text with subtle shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.08)';
+  ctx.font = 'bold 36px "Fredoka", sans-serif';
+  ctx.fillText(sky.main, W / 2 + 1, 62);
+  ctx.fillStyle = sky.color;
+  ctx.fillText(sky.main, W / 2, 60);
 
   if (sky.sub) {
-    ctx.font = '14px "Courier New", monospace';
-    ctx.fillStyle = sky.color === '#c0392b' ? '#e74c3c' : '#5a5a5a';
-    ctx.fillText(sky.sub, W / 2, 60);
+    ctx.font = '22px "Fredoka", sans-serif';
+    ctx.fillStyle = sky.color === '#c62828' ? '#e57373' : '#78909c';
+    ctx.fillText(sky.sub, W / 2, 92);
   }
 
   ctx.textAlign = 'left';
@@ -462,7 +559,7 @@ function drawFloats() {
     ctx.save();
     ctx.globalAlpha = Math.min(f.alpha, 1);
     ctx.fillStyle = f.color;
-    ctx.font = 'bold 17px "Courier New", monospace';
+    ctx.font = 'bold 28px "Fredoka", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(f.text, f.x, f.y);
     ctx.restore();
@@ -480,32 +577,67 @@ function drawFlash() {
 }
 
 function drawHUD() {
-  ctx.fillStyle = '#999';
-  ctx.font = '13px "Courier New", monospace';
-  ctx.fillText(`Score: ${Math.floor(score)}`, 12, 18);
-  ctx.textAlign = 'right';
-  ctx.fillText(`Round ${round}`, W - 12, 18);
-  ctx.fillText(`Words: ${wordsLearned}`, W - 12, 34);
-  ctx.textAlign = 'left';
+  // Score pill — top left
+  drawPill(16, 14, `Score  ${Math.floor(score)}`, '#546e7a');
+  // Round pill — top right
+  drawPill(W - 16 - measurePill(`Round ${round}`), 14, `Round ${round}`, '#546e7a');
+  // Words pill — below round
+  drawPill(W - 16 - measurePill(`Words  ${wordsLearned}`), 52, `Words  ${wordsLearned}`, '#7e57c2');
+}
+
+function measurePill(text) {
+  ctx.font = 'bold 18px "Fredoka", sans-serif';
+  return ctx.measureText(text).width + 28;
+}
+
+function drawPill(x, y, text, color) {
+  ctx.font = 'bold 18px "Fredoka", sans-serif';
+  const tw = ctx.measureText(text).width;
+  const pw = tw + 28, ph = 30;
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.beginPath();
+  ctx.roundRect(x, y, pw, ph, 15);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + 14, y + ph / 2);
+  ctx.textBaseline = 'alphabetic';
 }
 
 function drawPhaseIndicator() {
   if (roundData.phase === 'quiz') {
+    // Subtle red border glow
     ctx.save();
-    ctx.fillStyle = 'rgba(192,57,43,0.12)';
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#c0392b';
-    ctx.font = 'bold 11px "Courier New", monospace';
+    ctx.strokeStyle = 'rgba(198,40,40,0.25)';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(3, 3, W - 6, H - 6);
+    // Bottom bar
+    ctx.fillStyle = 'rgba(198,40,40,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(W / 2 - 240, H - 44, 480, 36, 18);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 17px "Fredoka", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('— QUIZ MODE — Crash into the right answer! —', W / 2, H - 16);
+    ctx.textBaseline = 'middle';
+    ctx.fillText('QUIZ MODE — Crash into the right answer!', W / 2, H - 26);
     ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
     ctx.restore();
   }
 }
 
+// ── MENU SCREEN ─────────────────────────────────
 function drawMenu() {
-  ctx.fillStyle = '#f7f7f7';
+  // Background
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#e3f2fd');
+  grad.addColorStop(0.7, '#fafafa');
+  grad.addColorStop(1, '#f5f0e8');
+  ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
+
+  drawHills();
   drawClouds();
   drawGround();
 
@@ -513,71 +645,102 @@ function drawMenu() {
   dino.y = GROUND_Y; dino.grounded = true; dino.runFrame = 0;
   drawDino();
 
-  // Static cactus
-  ctx.save();
-  drawCactus({ x: 300, w: 22, h: 42 });
-  drawQuizCactus({ x: 500, w: 22, h: 42, label: 'hello', correct: false, passed: false, hit: false });
-  ctx.restore();
+  // Static cacti
+  drawCactus({ x: 420, w: HW, h: HH });
+  drawQuizCactus({ x: 680, w: HW, h: HH, label: 'hello', correct: false, passed: false, hit: false });
 
   ctx.textAlign = 'center';
 
-  ctx.fillStyle = '#333';
-  ctx.font = 'bold 32px "Courier New", monospace';
-  ctx.fillText('DINO VOCAB', W / 2, 60);
+  // Title
+  ctx.fillStyle = '#263238';
+  ctx.font = 'bold 56px "Fredoka", sans-serif';
+  ctx.fillText('DINO VOCAB', W / 2, 80);
 
-  ctx.font = '16px "Courier New", monospace';
-  ctx.fillStyle = '#777';
-  ctx.fillText('Learn Spanish while you run!', W / 2, 88);
+  // Subtitle
+  ctx.font = '26px "Fredoka", sans-serif';
+  ctx.fillStyle = '#78909c';
+  ctx.fillText('Learn Spanish while you run!', W / 2, 118);
 
-  ctx.font = '13px "Courier New", monospace';
-  ctx.fillStyle = '#aaa';
-  ctx.fillText('1. Jump over green hurdles to learn words', W / 2, 125);
-  ctx.fillText('2. A quiz appears — 3 answer hurdles approach', W / 2, 145);
-  ctx.fillText('3. CRASH into the correct answer to survive', W / 2, 165);
-  ctx.fillText('4. Wrong crash or skipping all = Game Over', W / 2, 185);
+  // Instructions card
+  const cw = 520, ch = 160, cx = (W - cw) / 2, cy = 145;
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.beginPath();
+  ctx.roundRect(cx, cy, cw, ch, 16);
+  ctx.fill();
 
-  ctx.font = 'bold 15px "Courier New", monospace';
-  ctx.fillStyle = '#333';
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 400);
-  ctx.globalAlpha = 0.4 + 0.6 * pulse;
-  ctx.fillText('Press SPACE or tap to start', W / 2, 225);
-  ctx.globalAlpha = 1;
+  ctx.font = '20px "Fredoka", sans-serif';
+  ctx.fillStyle = '#546e7a';
+  const instructions = [
+    '1.  Jump over green hurdles to learn words',
+    '2.  A quiz appears with 3 answer hurdles',
+    '3.  CRASH into the correct answer to survive',
+    '4.  Wrong crash or skipping all = Game Over',
+  ];
+  instructions.forEach((line, i) => {
+    ctx.fillText(line, W / 2, cy + 36 + i * 32);
+  });
+
+  // Start button
+  const bw = 340, bh = 52, bxx = (W - bw) / 2, byy = 330;
+  const pulse = 0.92 + 0.08 * Math.sin(Date.now() / 300);
+  ctx.save();
+  ctx.translate(W / 2, byy + bh / 2);
+  ctx.scale(pulse, pulse);
+  ctx.translate(-W / 2, -(byy + bh / 2));
+  ctx.fillStyle = '#43a047';
+  ctx.beginPath();
+  ctx.roundRect(bxx, byy, bw, bh, 26);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 24px "Fredoka", sans-serif';
+  ctx.fillText('Press SPACE or tap to start', W / 2, byy + 33);
+  ctx.restore();
 
   ctx.textAlign = 'left';
 }
 
+// ── GAME OVER SCREEN ────────────────────────────
 function drawGameOver() {
-  // Dim
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  // Dim overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.fillRect(0, 0, W, H);
 
-  // Box
-  const bw = 440, bh = 160, bx = (W - bw) / 2, by = 50;
+  // Modal card
+  const cw = 560, ch = 260, cx = (W - cw) / 2, cy = (H - ch) / 2 - 20;
   ctx.fillStyle = '#fff';
-  ctx.strokeStyle = '#555';
-  ctx.lineWidth = 2;
+  ctx.shadowColor = 'rgba(0,0,0,0.2)';
+  ctx.shadowBlur = 30;
   ctx.beginPath();
-  ctx.roundRect(bx, by, bw, bh, 10);
+  ctx.roundRect(cx, cy, cw, ch, 20);
   ctx.fill();
-  ctx.stroke();
+  ctx.shadowBlur = 0;
 
   ctx.textAlign = 'center';
 
-  ctx.fillStyle = '#c0392b';
-  ctx.font = 'bold 26px "Courier New", monospace';
-  ctx.fillText('GAME OVER', W / 2, by + 38);
+  // Title
+  ctx.fillStyle = '#c62828';
+  ctx.font = 'bold 38px "Fredoka", sans-serif';
+  ctx.fillText('GAME OVER', W / 2, cy + 52);
 
-  ctx.fillStyle = '#555';
-  ctx.font = '14px "Courier New", monospace';
-  ctx.fillText(roundData.gameOverMsg || '', W / 2, by + 68);
+  // Message
+  ctx.fillStyle = '#546e7a';
+  ctx.font = '20px "Fredoka", sans-serif';
+  ctx.fillText(roundData.gameOverMsg || '', W / 2, cy + 95);
 
-  ctx.fillStyle = '#333';
-  ctx.font = 'bold 14px "Courier New", monospace';
-  ctx.fillText(`Score: ${Math.floor(score)}    ·    Words Learned: ${wordsLearned}    ·    Rounds: ${round - 1}`, W / 2, by + 98);
+  // Stats
+  ctx.fillStyle = '#263238';
+  ctx.font = 'bold 22px "Fredoka", sans-serif';
+  ctx.fillText(`Score: ${Math.floor(score)}     Words: ${wordsLearned}     Rounds: ${Math.max(round - 1, 0)}`, W / 2, cy + 145);
 
-  ctx.fillStyle = '#888';
-  ctx.font = '13px "Courier New", monospace';
-  ctx.fillText('Press SPACE or tap to retry', W / 2, by + 132);
+  // Retry button
+  const bw = 320, bh = 48, bxx = (W - bw) / 2, byy = cy + 175;
+  ctx.fillStyle = '#43a047';
+  ctx.beginPath();
+  ctx.roundRect(bxx, byy, bw, bh, 24);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 22px "Fredoka", sans-serif';
+  ctx.fillText('Press SPACE or tap to retry', W / 2, byy + 31);
 
   ctx.textAlign = 'left';
 }
@@ -585,25 +748,26 @@ function drawGameOver() {
 // ── RENDER ──────────────────────────────────────
 function render() {
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = '#f7f7f7';
-  ctx.fillRect(0, 0, W, H);
 
   if (state === 'menu') { drawMenu(); return; }
 
+  drawBackground();
+  drawHills();
   drawClouds();
-  drawPhaseIndicator();
   drawSkyText();
   drawGround();
 
   // Hurdles
   for (const h of hurdles) {
-    if (h.x > W + 60 || h.x + h.w < -60) continue;
+    if (h.x > W + 80 || h.x + h.w < -80) continue;
     if (h.type === 'learn') drawCactus(h);
     else drawQuizCactus(h);
   }
 
+  drawDust();
   drawDino();
   drawFloats();
+  drawPhaseIndicator();
   drawHUD();
   drawFlash();
 
